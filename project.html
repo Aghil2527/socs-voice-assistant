@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MGU SCS Voice Assistant</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar styling for the chat window */
+        #chat-window::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat-window::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1; /* slate-300 */
+            border-radius: 4px;
+        }
+        #chat-window::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+        }
+        .message-box-user {
+            border-bottom-right-radius: 0.5rem; /* rounded-xl */
+        }
+        .message-box-ai {
+            border-bottom-left-radius: 0.5rem; /* rounded-xl */
+        }
+        /* Custom pulse animation for the microphone button */
+        .mic-pulse {
+            animation: pulse-mic 1.5s infinite;
+        }
+        @keyframes pulse-mic {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen p-4 font-sans">
+    <div class="w-full max-w-2xl bg-white shadow-2xl rounded-2xl overflow-hidden flex flex-col h-[90vh]">
+        <!-- Header -->
+        <header class="p-4 bg-indigo-800 text-white shadow-md flex justify-between items-center">
+            <h1 class="text-xl font-bold">SCS MGU Information Assistant</h1>
+            <span id="loading-spinner" class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full hidden"></span>
+        </header>
+
+        <!-- Chat Window -->
+        <div id="chat-window" class="flex-grow p-4 space-y-4 overflow-y-auto bg-gray-100">
+            <!-- Messages will be injected here -->
+            <div id="initial-message" class="text-center text-gray-500 pt-8">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-indigo-500 mb-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM4 11a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM5 15a1 1 0 001 1h8a1 1 0 100-2H6a1 1 0 00-1 1z" />
+                </svg>
+                <p>Hello! I am the AI assistant for M.G. University School of Computer Sciences (SCS).</p>
+                <p class="text-xs text-gray-400 mt-1">Ask me about admissions, courses, or faculty. (Chat history is *not* saved)</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white border-t border-gray-200 flex items-center space-x-3">
+            <input type="text" id="user-input" placeholder="Type your question..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150" autocomplete="off" disabled>
+
+            <button id="mic-button" class="p-3 rounded-full bg-red-500 text-white shadow-lg hover:bg-red-600 transition duration-150 active:scale-95 disabled:opacity-50" title="Start Voice Input" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4z" clip-rule="evenodd" />
+                    <path fill-rule="evenodd" d="M5.586 9.414a1 1 0 010 1.414l-2 2a1 1 0 01-1.414 0l-2-2a1 1 0 010-1.414l2-2a1 1 0 011.414 0l2 2zM14.414 9.414a1 1 0 000 1.414l2 2a1 1 0 001.414 0l2-2a1 1 0 000-1.414l-2-2a1 1 0 00-1.414 0l-2 2z" clip-rule="evenodd" />
+                </svg>
+            </button>
+
+            <button id="send-button" class="p-3 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 transition duration-150 active:scale-95 disabled:opacity-50" title="Send Message" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.969.807l5 1.429a1 1 0 001.169-1.409l-7-14z"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- System Message Box -->
+        <div id="system-message" class="p-2 text-sm text-center text-white bg-red-500 rounded-b-xl hidden"></div>
+    </div>
+
+    <script type="module">
+        // Configuration and API Key
+        const GEMINI_API_KEY = ""; // Canvas will inject the key at runtime
+        const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
+        // Updated System Instruction for MGU SCS context
+        const SYSTEM_INSTRUCTION = "You are an AI Information Assistant for the School of Computer Sciences (SCS) at Mahatma Gandhi University (MGU). Your primary role is to answer questions about academic programs, admissions, faculty, and campus life at SCS, MGU (socs.mgu.in). Be friendly, concise, and helpful. If you cannot find specific information, gently suggest checking the official MGU or SCS website (socs.mgu.in).";
+
+        // DOM elements
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const micButton = document.getElementById('mic-button');
+        const systemMessageElement = document.getElementById('system-message');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const initialMessage = document.getElementById('initial-message');
+
+        // State variables
+        let isListening = false;
+        let speechRecognition = null;
+        let speechSynthesis = window.speechSynthesis;
+        let isSpeaking = false;
+        let isReady = true; // Always ready as no external authentication is needed
+
+        // --- Utility Functions ---
+
+        /**
+         * Shows a temporary system message to the user.
+         */
+        function showSystemMessage(message, type = 'error') {
+            systemMessageElement.textContent = message;
+            systemMessageElement.className = `p-2 text-sm text-center text-white ${type === 'error' ? 'bg-red-500' : 'bg-green-500'} rounded-b-xl`;
+            systemMessageElement.classList.remove('hidden');
+            setTimeout(() => {
+                systemMessageElement.classList.add('hidden');
+            }, 5000);
+        }
+
+        /**
+         * Enables/disables controls and sets loading state.
+         * @param {boolean} enable 
+         */
+        function setControlsEnabled(enable) {
+            userInput.disabled = !enable;
+            sendButton.disabled = !enable || userInput.value.trim() === '';
+            micButton.disabled = !enable;
+            loadingSpinner.classList.toggle('hidden', enable);
+        }
+
+        /**
+         * Scrolls the chat window to the bottom.
+         */
+        function scrollToBottom() {
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // --- Rendering and Message Management ---
+
+        /**
+         * Creates an HTML element for a chat message. (Simplified, no timestamp needed for static chat)
+         * @param {string} text 
+         * @param {'user' | 'model'} role 
+         * @returns {HTMLElement}
+         */
+        function createMessageElement(text, role) {
+            const container = document.createElement('div');
+            container.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+            const messageBox = document.createElement('div');
+            messageBox.className = `max-w-[80%] p-3 rounded-xl shadow-md text-sm break-words transition duration-200 ease-in-out`;
+
+            if (role === 'user') {
+                messageBox.classList.add('bg-indigo-500', 'text-white', 'message-box-user');
+            } else {
+                messageBox.classList.add('bg-white', 'text-gray-800', 'message-box-ai');
+            }
+
+            const textContent = document.createElement('p');
+            textContent.textContent = text;
+            
+            messageBox.appendChild(textContent);
+            container.appendChild(messageBox);
+            return container;
+        }
+
+        /**
+         * Renders a new message to the chat window.
+         * @param {string} text 
+         * @param {'user' | 'model'} role 
+         */
+        function renderNewMessage(text, role) {
+             initialMessage.classList.add('hidden');
+             const el = createMessageElement(text, role);
+             chatWindow.appendChild(el);
+             scrollToBottom();
+        }
+
+        /**
+         * Retrieves the current visible chat history for the Gemini API context.
+         * @returns {Array<Object>}
+         */
+        function getChatHistoryForGemini() {
+             const messages = [];
+             // Read messages currently visible in the DOM
+             const messageElements = chatWindow.querySelectorAll('.flex > div');
+             
+             messageElements.forEach(el => {
+                 const textContent = el.querySelector('p')?.textContent;
+                 // Determine role based on class
+                 const role = el.classList.contains('message-box-user') ? 'user' : 'model';
+
+                 if (textContent && (role === 'user' || role === 'model')) {
+                     messages.push({
+                         role: role,
+                         parts: [{ text: textContent }]
+                     });
+                 }
+             });
+             return messages;
+        }
+
+        // --- Gemini API Call ---
+
+        /**
+         * Sends a message to the Gemini API and handles the response.
+         * @param {string} userText 
+         */
+        async function getGeminiResponse(userText) {
+            setControlsEnabled(false);
+            loadingSpinner.classList.remove('hidden');
+
+            // 1. Render user message
+            renderNewMessage(userText, 'user');
+            
+            // 2. Prepare payload
+            const chatHistory = getChatHistoryForGemini();
+            const contents = chatHistory.filter(msg => msg.role !== 'loading'); // Filter temporary messages
+
+            // Add the new user message to the contents array
+            contents.push({ role: 'user', parts: [{ text: userText }] });
+
+            const payload = {
+                contents: contents,
+                systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+                // Use Google Search grounding for accurate, up-to-date responses
+                tools: [{ "google_search": {} }], 
+            };
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            let aiResponseText = "Sorry, the AI assistant could not connect. Please check your network connection.";
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                // Check for HTTP errors
+                if (!response.ok) {
+                    throw new Error(`API returned status ${response.status}`);
+                }
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+                
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    aiResponseText = candidate.content.parts[0].text;
+                } else {
+                     console.error("Gemini API Error:", result);
+                     aiResponseText = "The AI returned an empty or invalid response. Please try rephrasing your question.";
+                }
+
+            } catch (error) {
+                console.error("Fetch Error:", error);
+                aiResponseText = `Network or API error: ${error.message}. Please try again.`;
+            } finally {
+                // 3. Render AI response
+                renderNewMessage(aiResponseText, 'model');
+                
+                // 4. Speak the response
+                speakText(aiResponseText);
+
+                // 5. Re-enable controls
+                setControlsEnabled(true);
+                loadingSpinner.classList.add('hidden');
+                userInput.focus();
+            }
+        }
+
+        // --- Speech Recognition (Input) ---
+
+        /**
+         * Initializes and manages the Web Speech Recognition API.
+         */
+        function toggleSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                showSystemMessage("Your browser does not support Web Speech Recognition.", 'error');
+                return;
+            }
+
+            if (isListening) {
+                speechRecognition.stop();
+                return;
+            }
+
+            // Stop any ongoing speech output before starting listening
+            if (isSpeaking) {
+                speechSynthesis.cancel();
+            }
+
+            // Initialize or re-initialize recognition
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            speechRecognition = new SpeechRecognition();
+            speechRecognition.continuous = false;
+            speechRecognition.interimResults = false;
+            speechRecognition.lang = 'en-IN'; // Set language to Indian English for local relevance
+
+            speechRecognition.onstart = () => {
+                isListening = true;
+                micButton.classList.add('mic-pulse', 'bg-red-700');
+                micButton.title = "Stop Voice Input";
+                userInput.placeholder = "Listening...";
+                showSystemMessage("Listening for your message...", 'success');
+                userInput.value = '';
+                userInput.focus();
+            };
+
+            speechRecognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                userInput.value = transcript;
+                isListening = false;
+                speechRecognition.stop(); 
+                
+                // Automatically send the transcribed text
+                if (transcript.trim() !== '') {
+                    handleSendMessage();
+                } else {
+                    showSystemMessage("I didn't catch that. Please try again.", 'error');
+                }
+            };
+
+            speechRecognition.onerror = (event) => {
+                isListening = false;
+                micButton.classList.remove('mic-pulse', 'bg-red-700');
+                micButton.classList.add('bg-red-500');
+                micButton.title = "Start Voice Input";
+                userInput.placeholder = "Type your question...";
+
+                if (event.error !== 'no-speech') {
+                    console.error("Speech Recognition Error:", event.error);
+                    showSystemMessage(`Voice input error: ${event.error}`, 'error');
+                } else {
+                    showSystemMessage("No speech detected. Tap the mic to try again.", 'error');
+                }
+            };
+            
+            speechRecognition.onend = () => {
+                 isListening = false;
+                 micButton.classList.remove('mic-pulse', 'bg-red-700');
+                 micButton.classList.add('bg-red-500');
+                 micButton.title = "Start Voice Input";
+                 userInput.placeholder = "Type your question...";
+            };
+
+            speechRecognition.start();
+        }
+
+
+        // --- Speech Synthesis (Output) ---
+
+        /**
+         * Speaks the given text using the Web Speech Synthesis API.
+         */
+        function speakText(text) {
+            if (!text || isSpeaking) return;
+            
+            isSpeaking = true;
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Set language preference to Indian English if available for a more relevant assistant voice
+            const voices = speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('en-GB'));
+            if (preferredVoice) {
+                utterance.voice = preferredVoice;
+            }
+
+            utterance.rate = 1.0; 
+            utterance.pitch = 1.0; 
+            utterance.volume = 1.0;
+            
+            utterance.onend = () => {
+                isSpeaking = false;
+            };
+
+            utterance.onerror = (event) => {
+                isSpeaking = false;
+                console.error('SpeechSynthesis Utterance Error:', event.error);
+            };
+
+            speechSynthesis.speak(utterance);
+        }
+
+        // --- Event Handlers ---
+
+        /**
+         * Handles the logic for sending a message, whether typed or transcribed.
+         */
+        function handleSendMessage() {
+            const userText = userInput.value.trim();
+            if (!userText || !isReady) return;
+
+            // Stop speaking if the user interrupts with a new message
+            if (isSpeaking) {
+                speechSynthesis.cancel();
+            }
+
+            // Clear input and send the text to the AI
+            userInput.value = '';
+            sendButton.disabled = true;
+            getGeminiResponse(userText);
+        }
+
+        userInput.addEventListener('input', () => {
+            sendButton.disabled = userInput.value.trim() === '';
+        });
+
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !sendButton.disabled) {
+                handleSendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', handleSendMessage);
+        micButton.addEventListener('click', toggleSpeechRecognition);
+
+        // Initial setup on load (simplified for static version)
+        window.onload = () => {
+             // Enable controls immediately
+             setControlsEnabled(true);
+             userInput.focus();
+        };
+
+    </script>
+</body>
+</html>
